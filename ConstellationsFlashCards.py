@@ -78,16 +78,18 @@
 
 # =================================== IMPORTS ===================================
 
-import pygtk
-pygtk.require('2.0')
-import gtk
+from gi.repository import Gtk
+from gi.repository import Gdk
+from gi.repository import PangoCairo
 import sys
 import os
-import gobject
 from math import sin, cos, tan, asin, acos, atan, pi, sqrt, atan2
 import random
-from sugar.activity import activity
-from sugar.activity.activity import get_bundle_path
+from sugar3.activity import activity
+from sugar3.activity.activity import get_bundle_path
+from sugar3.graphics.toolbarbox import ToolbarBox
+from sugar3.activity.widgets import StopButton
+from sugar3.activity.widgets import ActivityToolbarButton
 import logging
 from gettext import gettext
 
@@ -123,22 +125,16 @@ figures = constellations.data
 # -------------------------------------------------------------------------------
 #
 # controls on second menubar ("Quiz"):
-labelq1 = gtk.Label(_("Name"))
-cbq1 = gtk.combo_box_new_text()
-buttonq1 = gtk.Button(_("Tell me"))
-buttonq2 = gtk.Button(_("Another"))
+labelq1 = Gtk.Label(_("Name: "))
+model = Gtk.ListStore(str) 
+cbq1 = Gtk.ComboBox.new_with_model(model)
+renderer_text = Gtk.CellRendererText()
+cbq1.pack_start(renderer_text, True)
+cbq1.add_attribute(renderer_text, "text", 0)
+buttonq1 = Gtk.Button(_("Tell me"))
+buttonq2 = Gtk.Button(_("Another"))
 # controls on third menubar ("Results"):
-containerr1 = gtk.VBox()
-labelr1 = gtk.Label(_(" constellations seen."))
-labelr2 = gtk.Label(" ")
-labelr3 = gtk.Label(_(" correct on first try."))
-labelr4 = gtk.Label(_(" correct on second try."))
-# controls on last menubar ("About"):
-containera1 = gtk.VBox()
-labela1 = gtk.Label(_("Version 1.0 (build 10) of 2010.05.19.1500 UT"))
-labela2 = gtk.Label(" ")
-labela3 = gtk.Label(_("See http://wiki.laptop.org/go/ConstellationsFlashCards for help."))
-labela4 = gtk.Label(" ")
+labelr1 = Gtk.Label(_(" constellations seen."))
 
 name_from_abbrev = {}
 constellations = []
@@ -179,15 +175,14 @@ def rtod(r):
 
 # ============================== ChartDisplay Object ============================
 
-class ChartDisplay(gtk.DrawingArea):
+class ChartDisplay(Gtk.DrawingArea):
   def __init__(self, context):
     super(ChartDisplay, self).__init__()
     self.context = context
     self.colors = {}
     self.canplot = False
-    self.pangolayout = self.create_pango_layout("")
-    self.add_events(gtk.gdk.BUTTON_PRESS_MASK | gtk.gdk.BUTTON1_MOTION_MASK |
-	gtk.gdk.BUTTON2_MOTION_MASK)
+    self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK |
+        Gdk.EventMask.BUTTON1_MOTION_MASK | Gdk.EventMask.BUTTON2_MOTION_MASK)
     self.id = ""
     self.cname = ""
     self.points = 5
@@ -207,16 +202,17 @@ class ChartDisplay(gtk.DrawingArea):
     self.xoffset = (self.screensize[0] - self.diameter) / 2 - self.margin
     self.yoffset = (self.screensize[1] - self.diameter) / 2 - self.margin
 
+    self.gc = self.get_window().cairo_create()
+    self.pangolayout = PangoCairo.create_layout(self.gc)
+
 # Establish color selections (need only do this once).
 
     if (len(self.colors) == 0):
-      self.gc = self.style.fg_gc[gtk.STATE_NORMAL]
-      self.colormap = self.gc.get_colormap()
-      self.colors[0] = self.colormap.alloc_color('white')
-      self.colors[1] = self.colormap.alloc_color('black')
-      self.colors[2] = self.colormap.alloc_color('red')
-      self.colors[3] = self.colormap.alloc_color('gray')
-      self.colors[4] = self.colormap.alloc_color('green')
+      self.colors[0] = Gdk.Color.parse('white')[1]
+      self.colors[1] = Gdk.Color.parse('black')[1]
+      self.colors[2] = Gdk.Color.parse('red')[1]
+      self.colors[3] = Gdk.Color.parse('gray')[1]
+      self.colors[4] = Gdk.Color.parse('green')[1]
       self.canplot = True
       self.plotchart(True)
     else:
@@ -237,9 +233,9 @@ class ChartDisplay(gtk.DrawingArea):
     elif (data == "tell_me"):
       self.context.identifyobject.set_label(_("This constellation is named ") + \
                                             self.cname)
-      labelr1.set_label(str(quiz_count) + _(" constellations seen."))
-      labelr3.set_label(str(correct_first_count) +  _(" correct on first try."))
-      labelr4.set_label(str(correct_second_count) + _(" correct on second try."))
+      labelr1.set_label(str(quiz_count) + _(" constellations seen. ") + 
+        str(correct_first_count) +  _(" correct on first try. ") +
+        str(correct_second_count) + _(" correct on second try."))
       cbq1.set_sensitive(False)
       buttonq1.set_sensitive(False)
     elif (data == "another"):
@@ -247,13 +243,16 @@ class ChartDisplay(gtk.DrawingArea):
       cbq1.set_sensitive(True)
       buttonq1.set_sensitive(True)
       quiz_count = quiz_count + 1
-      labelr1.set_label(str(quiz_count) + _(" constellations seen."))
-      labelr3.set_label(str(correct_first_count) +  _(" correct on first try."))
-      labelr4.set_label(str(correct_second_count) + _(" correct on second try."))
+      labelr1.set_label(str(quiz_count) + _(" constellations seen. ") + 
+        str(correct_first_count) +  _(" correct on first try. ") +
+        str(correct_second_count) + _(" correct on second try."))
       self.plotchart(True)
+      self.queue_draw()
     elif (data == "select_name"):
       if (cbq1.get_active() >= 0):
-        name = cbq1.get_active_text()
+        tree_iter = cbq1.get_active_iter()
+        model = cbq1.get_model()
+        name = model[tree_iter][0]
         if (name == self.cname):
           self.context.identifyobject.set_label(_("That is correct."))
           id = self.id
@@ -271,9 +270,9 @@ class ChartDisplay(gtk.DrawingArea):
           self.points = self.points - 2
           if (self.points < 0):
             self.points = 0
-      labelr1.set_label(str(quiz_count) + _(" constellations seen."))
-      labelr3.set_label(str(correct_first_count) +  _(" correct on first try."))
-      labelr4.set_label(str(correct_second_count) + _(" correct on second try."))
+      labelr1.set_label(str(quiz_count) + _(" constellations seen. ") + 
+        str(correct_first_count) +  _(" correct on first try. ") +
+        str(correct_second_count) + _(" correct on second try."))
     else:
       pass
     return False
@@ -336,49 +335,44 @@ class ChartDisplay(gtk.DrawingArea):
 
   def plot_field(self):
 
-# Erase prior plot
-
     if (not self.canplot):
       return
-    self.cleararea()
-    self.gc.set_foreground(self.colors[0])
-    self.window.draw_rectangle(self.gc,
-                              True,
-                              self.xoffset + self.margin - 2,
-                              self.yoffset + self.margin - 2,
-                              self.diameter + 4,
-                              self.diameter + 4)
 
 # Plot sky square
 
-    self.gc.set_foreground(self.colors[1])
-    self.window.draw_rectangle(self.gc,
-                              False,
-                              self.xoffset + self.margin - 2,
-                              self.yoffset + self.margin - 2,
-                              self.diameter + 4,
-                              self.diameter + 4)
+    self.cleararea()
+    self.gc.set_source_rgb((1/65536.0)*self.colors[0].red,
+        (1/65536.0)*self.colors[0].green,
+        (1/65536.0)*self.colors[0].blue)
+    self.gc.rectangle(self.xoffset + self.margin - 2,
+        self.yoffset + self.margin - 2, self.diameter + 4, self.diameter + 4)
+    self.gc.fill()
 
 # label the cardinal points.
 
-    self.gc.set_foreground(self.colors[1])
-    self.pangolayout.set_text(_("N"))
-    self.window.draw_layout(self.gc,
-                     self.xoffset + self.margin + self.diameter / 2 - 10,
-                     self.margin - 30, self.pangolayout)
-    self.pangolayout.set_text(_("S"))
-    self.window.draw_layout(self.gc,
-                     self.xoffset + self.margin + self.diameter / 2 - 10,
-                     2 * self.margin + self.diameter - 30, self.pangolayout)
-    self.pangolayout.set_text(_("E"))
-    self.window.draw_layout(self.gc,
-                     self.xoffset + self.margin - 30,
-                     self.margin + self.diameter / 2 - 10, self.pangolayout)
-    self.pangolayout.set_text(_("W"))
-    self.window.draw_layout(self.gc,
-                     self.xoffset + self.margin + self.diameter + 10,
-                     self.margin + self.diameter / 2 - 10, self.pangolayout)
-    self.gc.set_foreground(self.colors[1])
+    self.gc.set_source_rgb((1/65536.0)*self.colors[1].red,
+        (1/65536.0)*self.colors[1].green,
+        (1/65536.0)*self.colors[1].blue)
+    self.pangolayout.set_text(_("N"), -1)
+    self.gc.move_to(self.xoffset + self.margin + self.diameter / 2 - 10,
+        self.margin - 30)
+    PangoCairo.show_layout(self.gc, self.pangolayout)
+    self.gc.stroke()
+    self.pangolayout.set_text(_("S"), -1)
+    self.gc.move_to(self.xoffset + self.margin + self.diameter / 2 - 10,
+        2 * self.margin + self.diameter - 30)
+    PangoCairo.show_layout(self.gc, self.pangolayout)
+    self.gc.stroke()
+    self.pangolayout.set_text(_("E"), -1)
+    self.gc.move_to(self.xoffset + self.margin - 30,
+        self.margin + self.diameter / 2 - 10)
+    PangoCairo.show_layout(self.gc, self.pangolayout)
+    self.gc.stroke()
+    self.pangolayout.set_text(_("W"), -1)
+    self.gc.move_to(self.xoffset + self.margin + self.diameter + 10,
+        self.margin + self.diameter / 2 - 10)
+    PangoCairo.show_layout(self.gc, self.pangolayout)
+    self.gc.stroke()
     return True
 
 
@@ -393,7 +387,6 @@ class ChartDisplay(gtk.DrawingArea):
 #                                            " size=" + str(self.size) )
     self.plot_stars(self.id)
     self.plot_constellation(self.id)
-    self.gc.set_foreground(self.colors[1])
     if (choose):
       self.fill_names_combobox()
 
@@ -426,7 +419,6 @@ class ChartDisplay(gtk.DrawingArea):
 # plotting a star but we have to figure out the alt/az coordinates for both ends
 # of the line segment.
 
-    self.gc.set_foreground(self.colors[1])
     for code, (name, lines) in figures.iteritems():
       if (code == id):
         for i in range(len(lines)):
@@ -441,17 +433,19 @@ class ChartDisplay(gtk.DrawingArea):
           py2 = py2 + self.diameter / 2.0
           px2 = px2 + self.margin - 2 + self.xoffset
           py2 = py2 + self.margin - 2 + self.yoffset
-          self.window.draw_line(self.gc, px1, py1, px2, py2)
+          self.gc.set_source_rgb((1/65536.0)*self.colors[1].red,
+            (1/65536.0)*self.colors[1].green,
+            (1/65536.0)*self.colors[1].blue)
+          self.gc.move_to(int(px1), int(py1))
+          self.gc.line_to(int(px2), int(py2))
+          self.gc.stroke()
 
 
   def plot_star(self, px, py, starsize):
-    self.window.draw_arc(self.gc, True,
-             px,
-             py,
-             starsize,
-             starsize,
-             0,
-             360*64)
+    self.gc.save()
+    self.gc.arc(int(px), int(py), starsize, 0, 2 * pi)
+    self.gc.fill()
+    self.gc.restore()
 
 
   def pick_constellation(self):
@@ -617,11 +611,7 @@ class ChartDisplay(gtk.DrawingArea):
 
     names = ["", "", "", "", ""]
     numbers = [-1, -1, -1, -1, -1]
-    for i in range(5):
-      try:
-        cbq1.remove_text(4 - i)
-      except:
-        pass
+    cbq1.get_model().clear()
 
 # Now set one of these names to self.cname.
 
@@ -648,20 +638,18 @@ class ChartDisplay(gtk.DrawingArea):
 # Fill cbq1 with the five strings.
 
     for i in range(5):
-      cbq1.append_text(names[i])
+      cbq1.get_model().append([names[i]])
 
 
   def cleararea(self):
     
 # Clear the drawing surface
 
-    self.gc.set_foreground(self.colors[3])
-    self.window.draw_rectangle(self.gc,
-                                    True,
-                                    1,
-                                    1,
-                                    self.screensize[0],
-                                    self.screensize[1])
+    self.gc.set_source_rgb((1/65536.0)*self.colors[3].red,
+        (1/65536.0)*self.colors[3].green,
+        (1/65536.0)*self.colors[3].blue)
+    self.gc.rectangle(1, 1, self.screensize[0], self.screensize[1])
+    self.gc.fill()
 
 
 # ========================= ConstellationsFlashCards Object ==========================
@@ -689,46 +677,47 @@ class ConstellationsFlashCards(activity.Activity):
 
 # Create toolbox
       
-    toolbox = activity.ActivityToolbox(self)
-    self.set_toolbox(toolbox)
-    self.quiz_toolbar = gtk.Toolbar()
-    self.quiz_toolbar.add(labelq1)
-    self.quiz_toolbar.add(cbq1)
-    self.quiz_toolbar.add(buttonq1)
-    self.quiz_toolbar.add(buttonq2)
+    toolbox = ToolbarBox()
+    self.set_toolbar_box(toolbox)
 
-    self.result_toolbar = gtk.Toolbar()
-    containerr1.add(labelr1)
-    containerr1.add(labelr2)
-    containerr1.add(labelr3)
-    containerr1.add(labelr4)
-    self.result_toolbar.add(containerr1)
+    self.max_participants = 1
 
-    self.about_toolbar = gtk.Toolbar()
-    containera1.add(labela1)
-    containera1.add(labela2)
-    containera1.add(labela3)
-    containera1.add(labela4)
-    self.about_toolbar.add(containera1)
- 
-# Fill the toolbox bars
+    activity_button_toolbar = ActivityToolbarButton(self)
+    toolbox.toolbar.insert(activity_button_toolbar, 0)
+    activity_button_toolbar.show()
 
-    toolbox.add_toolbar(_("Quiz"), self.quiz_toolbar)
-    toolbox.add_toolbar(_("Results"), self.result_toolbar)
-    toolbox.add_toolbar(_("About"), self.about_toolbar)
+    separator = Gtk.SeparatorToolItem()
+    separator.props.draw = False
+    separator.set_expand(True)
+    toolbox.toolbar.insert(separator, -1)
+    separator.show()
+
+    stop_button = StopButton(self)
+    stop_button.props.accelerator = '<Ctrl>q'
+    toolbox.toolbar.insert(stop_button, -1)
+    stop_button.show()
 
 # Create the GUI objects.
 
-    scrolled = gtk.ScrolledWindow()
-    scrolled.set_policy(gtk.POLICY_NEVER, gtk.POLICY_AUTOMATIC)
-    scrolled.props.shadow_type = gtk.SHADOW_NONE
+    scrolled = Gtk.ScrolledWindow()
+    scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+    scrolled.props.shadow_type = Gtk.ShadowType.NONE
     self.chart = ChartDisplay(self)
-    eb = gtk.EventBox()
-    vbox = gtk.VBox(False)
-    self.identifyobject = gtk.Label("")
-    vbox.pack_start(self.identifyobject, expand=False)
-    vbox.pack_start(self.chart)
-    eb.modify_bg(gtk.STATE_NORMAL, gtk.gdk.color_parse("gray"))
+    eb = Gtk.EventBox()
+    vbox = Gtk.VBox(False)
+    self.identifyobject = Gtk.Label("")
+    vbox.pack_start(self.identifyobject, False, True, 0)
+    hbox = Gtk.HBox(False)
+    hbox.pack_start(labelr1, True, True, 0)
+    vbox.pack_start(hbox, False, False, 0)
+    hbox = Gtk.HBox(False)
+    hbox.pack_start(labelq1, False, True, 0)
+    hbox.pack_start(cbq1, True, True, 0)
+    hbox.pack_start(buttonq1, True, True, 0)
+    hbox.pack_start(buttonq2, True, True, 0)
+    vbox.pack_start(hbox, False, False, 0)
+    vbox.pack_start(self.chart, True, True, 0)
+    eb.modify_bg(Gtk.StateType.NORMAL, Gdk.color_parse("gray"))
 
 # Stack the GUI objects.
 
@@ -736,7 +725,7 @@ class ConstellationsFlashCards(activity.Activity):
 
 # Connect the event handlers
 
-    self.chart.connect("expose_event", self.chart.area_expose_cb)
+    self.chart.connect("draw", self.chart.area_expose_cb)
     buttonq1.connect("clicked", self.chart.callback, "tell_me")
     buttonq2.connect("clicked", self.chart.callback, "another")
     cbq1.connect("changed", self.chart.callback, "select_name")
@@ -750,24 +739,17 @@ class ConstellationsFlashCards(activity.Activity):
 # Show the GUI stack.
 
     toolbox.show()
-    toolbox.set_current_toolbar(1)
     self.chart.show()
     eb.show()
     scrolled.show()
     self.show_all()
 
-# FIXME: We can't do sharing yet, so hide the control for it.
-
-    toolbar = toolbox.get_activity_toolbar()
-    toolbar.share.hide()
-
 # If C_FC.cfg exists, get the previous scores.
 
     self.read_file(self.datafile)
-    labelr1.set_label(str(quiz_count) + _(" constellations seen."))
-    labelr3.set_label(str(correct_first_count) +  _(" correct on first try."))
-    labelr4.set_label(str(correct_second_count) + _(" correct on second try."))
-
+    labelr1.set_label(str(quiz_count) + _(" constellations seen. ") + 
+      str(correct_first_count) +  _(" correct on first try. ") +
+      str(correct_second_count) + _(" correct on second try."))
 # Establish initial state of controls and do a plot.
 
     self.chart.plotchart(True)
