@@ -1,9 +1,10 @@
 [Activity]
 name=ConstellationsFlashCards
-service_name = org.laptop.ConstellationsFlashCards
-class = ConstellationsFlashCards.ConstellationsFlashCards
+bundle_id = org.laptop.ConstellationsFlashCards
+exec = sugar-activity ConstellationsFlashCards.ConstellationsFlashCards
 icon = ConstellationsFlashCards
-activity_version = 1
+activity_version = 2
 host_version = 1
 show_launcher = yes
 license=GPLv2+
+repository= https://github.com/sugarlabs/Constellationsflashcards
